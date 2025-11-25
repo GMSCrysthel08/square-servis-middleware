@@ -5,6 +5,11 @@ const fetch = require('node-fetch');
 const app = express();
 app.use(express.json());
 
+// ✔️ Home route so / does not show "Cannot GET /"
+app.get('/', (req, res) => {
+  res.send('Square–Servis.ai Middleware is running ✔️');
+});
+
 const PORT = process.env.PORT || 3000;
 const SQUARE_ENV = process.env.SQUARE_ENV || 'sandbox';
 const SQUARE_ACCESS_TOKEN = process.env.SQUARE_ACCESS_TOKEN;
@@ -29,8 +34,7 @@ async function squareFetch(path, method = 'GET', body) {
   return res.json();
 }
 
-// Example: create a Square customer (optional)
-// POST body: { given_name, family_name, email_address, phone_number }
+// Create customer
 app.post('/create-customer', async (req, res) => {
   try {
     const body = req.body;
@@ -42,14 +46,12 @@ app.post('/create-customer', async (req, res) => {
   }
 });
 
-// Main endpoint: Servis.ai calls this to create & publish an invoice
-// Expected JSON body: { customer_id, amount, currency, description, due_date }
+// Create and publish invoice
 app.post('/create-square-invoice', async (req, res) => {
   try {
     const { customer_id, amount, currency = 'USD', description = '', due_date } = req.body;
     if (!customer_id || !amount) return res.status(400).json({ error: 'customer_id and amount required' });
 
-    // 1) Create an invoice draft with a payment_request
     const invoiceBody = {
       invoice: {
         location_id: LOCATION_ID,
@@ -59,14 +61,13 @@ app.post('/create-square-invoice', async (req, res) => {
         payment_requests: [
           {
             request_type: "BALANCE",
-            due_date: due_date || null, // format YYYY-MM-DD
+            due_date: due_date || null,
             fixed_amount_requested_money: {
               amount: Math.round(Number(amount) * 100),
               currency
             }
           }
         ],
-        // optional: accept payments via Square
         delivery_method: "EMAIL"
       }
     };
@@ -76,7 +77,6 @@ app.post('/create-square-invoice', async (req, res) => {
       return res.status(500).json({ error: 'invoice create failed', details: createResp });
     }
 
-    // 2) Publish invoice so email is sent (or keep draft if you want manual publishing)
     const invoiceId = createResp.invoice.id;
     const publishBody = {
       invoice_version: createResp.invoice.version
@@ -84,7 +84,6 @@ app.post('/create-square-invoice', async (req, res) => {
 
     const publishResp = await squareFetch(`/v2/invoices/${invoiceId}/publish`, 'POST', publishBody);
 
-    // Return both responses for debugging
     res.json({ create: createResp, publish: publishResp });
 
   } catch (err) {
@@ -93,11 +92,9 @@ app.post('/create-square-invoice', async (req, res) => {
   }
 });
 
-// Square webhook receiver (configure this URL in Square Developer dashboard)
+// Webhook
 app.post('/square/webhook', (req, res) => {
-  // Validate signature in production (Square sends signature header)
   console.log('Square webhook received:', req.headers['x-square-event-type']);
-  // Example: forward to Servis.ai or update DB
   res.status(200).send('ok');
 });
 
